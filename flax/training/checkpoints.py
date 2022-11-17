@@ -24,6 +24,7 @@ import functools
 import os
 import pathlib
 import re
+import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 from absl import logging
@@ -33,13 +34,15 @@ from flax import errors
 from flax import serialization
 from flax import traverse_util
 import jax
+from jax import monitoring
 from jax import process_index
 from jax import sharding
 from jax.experimental.global_device_array import GlobalDeviceArray
 from jax.experimental.multihost_utils import sync_global_devices
 from tensorflow import errors as tf_errors
 
-
+_READ_CHECKPOINT_EVENT: str = '/jax/checkpoint/read/durations_sec'
+_WRITE_CHECKPOINT_EVENT: str = '/jax/checkpoint/write/durations_sec'
 _IMPORT_GDAM_SUCCESSFUL = False
 try:
   from jax.experimental.gda_serialization.serialization import get_tensorstore_spec
@@ -520,6 +523,7 @@ def save_checkpoint(ckpt_dir: Union[str, os.PathLike],
   Returns:
     Filename of saved checkpoint.
   """
+  start_time = time.time()
   # Make sure all saves are finished before the logic of checking and removing
   # outdated checkpoints happens.
   if async_manager:
@@ -540,6 +544,9 @@ def save_checkpoint(ckpt_dir: Union[str, os.PathLike],
     async_manager.save_async(save_main_ckpt_task)
   else:
     save_main_ckpt_task()
+  end_time = time.time()
+  monitoring.record_event_duration_secs(_WRITE_CHECKPOINT_EVENT,
+                                        end_time - start_time)
   return ckpt_path
 
 
@@ -586,6 +593,7 @@ def save_checkpoint_multiprocess(ckpt_dir: Union[str, os.PathLike],
   Returns:
     Filename of saved checkpoint.
   """
+  start_time = time.time()
   # Make sure all saves are finished before the logic of checking and removing
   # outdated checkpoints happens.
   sync_global_devices('starting_save_checkpoint')
@@ -628,6 +636,9 @@ def save_checkpoint_multiprocess(ckpt_dir: Union[str, os.PathLike],
     _save_mpas(gda_manager, mpa_targets, ckpt_tmp_path, ckpt_path, base_path,
                keep, overwrite, keep_every_n_steps, async_manager)
 
+  end_time = time.time()
+  monitoring.record_event_duration_secs(_WRITE_CHECKPOINT_EVENT,
+                                        end_time - start_time)
   return ckpt_path
 
 
@@ -702,6 +713,7 @@ def restore_checkpoint(
     returned. This is to match the behavior of the case where a directory path
     is specified but the directory has not yet been created.
   """
+  start_time = time.time()
   ckpt_dir = os.fspath(ckpt_dir)  # Pathlib -> str
   ckpt_dir = safe_normpath(ckpt_dir)
   if step is not None:
@@ -754,8 +766,15 @@ def restore_checkpoint(
                                allow_partial_mpa_restoration)
 
   if target is None:
-    return state_dict
-  return serialization.from_state_dict(target, state_dict)
+    restored_checkpoint = state_dict
+  else:
+    restored_checkpoint = serialization.from_state_dict(target, state_dict)
+
+  end_time = time.time()
+  monitoring.record_event_duration_secs(_READ_CHECKPOINT_EVENT,
+                                        end_time - start_time)
+
+  return restored_checkpoint
 
 
 def convert_pre_linen(params: PyTree) -> PyTree:
