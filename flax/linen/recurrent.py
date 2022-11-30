@@ -250,6 +250,7 @@ class OptimizedLSTMCell(RNNCellBase):
       inputs, kernel, bias = promote_dtype(inputs, kernel, bias, dtype=self.dtype)
       y = jnp.dot(inputs, kernel)
       if use_bias:
+        assert bias is not None
         y += jnp.reshape(bias, (1,) * (y.ndim - 1) + (-1,))
 
       # Split the result back into individual (i, f, g, o) outputs.
