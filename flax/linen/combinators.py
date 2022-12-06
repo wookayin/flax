@@ -51,5 +51,8 @@ class Sequential(Module):
 
     outputs = self.layers[0](*args, **kwargs)
     for layer in self.layers[1:]:
-      outputs = layer(outputs)
+      if isinstance(outputs, tuple):
+        outputs = layer(*outputs)
+      else:
+        outputs = layer(outputs)
     return outputs
