@@ -302,7 +302,7 @@ class _Conv(Module):
       "locally connected layer", "unshared convolution", or "local convolution".
 
     """
-    ...
+    ... # type: ignore
 
   @compact
   def __call__(self, inputs: Array) -> Array:
